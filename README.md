@@ -16,5 +16,4 @@ for the real data, or
 
 for the artifically injected transit data.
 
-Note that in this case, "RoboVetter-Input.txt" corresponds to Table 3 of the paper, "RoboVetter-Output.txt" corresponds to Table 5, and "RoboVetter-Inject-Output.txt" corresponds to Table 6.
-
+Note that in this case, "RoboVetter-Input.txt" corresponds to Table 3 of the paper, "RoboVetter-Output.txt" corresponds to Table 5, and "RoboVetter-Inject-Input.txt" and "RoboVetter-Inject-Output.txt" corresponds to Table 6.
