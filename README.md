@@ -8,12 +8,13 @@ g++ -std=c++11 -O3 -o robovet DR24-RoboVetter.cpp
 
 To run the code, supply it an input file and an output filename. For example:
 
-g++ -std=c++11 -O3 -o robovet DR24-RoboVetter.cpp
+./robovet RoboVetter-Input.txt RoboVetter-Output.txt
 
-for the real data, or:
+for the real data, or
+ 
+./robovet RoboVetter-Inject-Input.txt RoboVetter-Inject-Output.txt
 
-g++ -std=c++11 -O3 -o robovet DR24-RoboVetter.cpp
+for the artifically injected transit data.
 
-for the artificially injected transits.
-
+Note that in this case, "RoboVetter-Input.txt" corresponds to Table 3 of the paper, "RoboVetter-Output.txt" corresponds to Table 5, and "RoboVetter-Inject-Output.txt" corresponds to Table 6.
 
