@@ -1,18 +1,18 @@
-/* Kepler DR24 Robovetter
+/* 
+ * Kepler Q1-Q17 DR24 Robovetter
+ * 
+ * Compile via: g++ -std=c++11 -O3 -o robovet DR24-RoboVetter.cpp
+ * 
+ * Run as ./robovet INFILE  OUTFILE
+ * 
+ * For example:
+ * 
+ * "./robovet RoboVetter-Input.txt RoboVetter-Output.txt"   for the real data
+ * 
+ * "./robovet RoboVetter-Inject-Input.txt RoboVetter-Inject-Output.txt"   for the artifically injected transit data
+ *
+ */
 
-  Compile via: g++ -std=c++11 -O3 -o robovet DR24-RoboVetter.cpp
-
-  Run as ./robovet INFILE  OUTFILE  FLAG
-  
-  where INFILE = RoboVetter-Input.txt         with FLAG = 0, i.e., for the actual data
-        INFILE = RoboVetter-Inject-Input.txt  with FLAG = 1, i.e., for the artificially injected transits
-        
-  For example:
-  
-  ./robovet RoboVetter-Input.txt RoboVetter-Output.txt 0
-  ./robovet RoboVetter-Inject-Input.txt RoboVetter-Inject-Output.txt 1
-  
-*/
 
 #include <iomanip>
 #include <iostream>
@@ -26,7 +26,7 @@
 using namespace std;
 
 // Declare Functions
-void READDATA(),TRANSITLIKE(),SECECLIPSE(),ISSEC(),PERIODALIAS(),COMPPT(double,double,double,double);
+void READDATA(),TRANSITLIKE(),SECECLIPSE(),ISSEC(),COMPPT(double,double,double,double);
 double INVERFC(double), PSIG(double,double), ESIG(double,double,double);
 
 // Declare constants
@@ -36,12 +36,13 @@ const double ESIG_THRESH = 2.0;    // Epoch matching threshold
 const double WIDTHFAC = 2.5;       // Transit exclusion width actor
 const double MISSIONDUR = 1600.0;  // Mission duration in days
 
-// Declare global variables
-int i,j,k,l;  // Global counting integers
+// Declare variables
+int i,j,k,l;  // Counting integers
 int ntces;  // Number of TCEs to robo-vet
 string infilename,outfilename;
 ifstream infile;
 ofstream outfile;
+
 // Declare big struct of all our data
 struct datastruct {string tce,  // TCE string (KIC-PN)
                      comments;  // Comments from ephemeris match
@@ -95,15 +96,13 @@ struct datastruct {string tce,  // TCE string (KIC-PN)
                      marshall;  // Marshall metric for calculating if at least three transits are transit-like
                             };
 datastruct data[NMAX];
-string tmpstr1,tmpstr2;  // Temporary strings
 int sig_sec_eclipse[NMAX],not_transit_like[NMAX],planet_occultation[NMAX],centroid_offset[NMAX],period_is_double[NMAX],ephemeris_match[NMAX];  // Final disposition Flags. Made arrays so TCEs in same system can know about each other.
-string nexscidisp;
-double tmpdob1,tmpdob2,tmpdob3,tmpdob4,tmpdob5,tmpdob6;  // Temporary doubles
-int runtype;  // Runtype; 0 = Normal OPS, 1 = Injection, 2 = Inversion...add more as needed
-double epochthresh;
-int secfound;
-double lppsig;
-
+string nexscidisp;  // NEXSCI disposition
+double epochthresh; //Epoch matching threshold for sec. determination
+int secfound;  // Int to mark if a secondary has been found in the system
+double lppsig;  // LPP sigma value, computed based off number of TCEs
+string tmpstr1,tmpstr2;  // Temporary strings
+double tmpdob1,tmpdob2,tmpdob3,tmpdob4,tmpdob5,tmpdob6;  // Temporary doubles for computations
 
 
 int main (int argc, char* argv[])  
@@ -125,21 +124,12 @@ int main (int argc, char* argv[])
     cout << "Name of output file? ";
     cin >> outfilename;
     }
+
     
-  if(argc>3)
-    runtype = atoi(argv[3]);
-  else
-    {
-    cout << "What type of run is this for?" << endl;
-    cout << "0 - Normal OPS run" << endl;
-    cout << "1 - Injection run" << endl;
-    cin >> runtype;
-    }
-    
-  READDATA();  // Read all Input Data
+  READDATA();  // Read Input Data
   
 
-  // Figure out KIC and PN numbers from TCE string
+  // Figure out KIC, PN numbers, and total number of planets in each system, from TCE string
   for(i=0;i<ntces;i++)
     {
     if(data[i].kic != data[i-1].kic)  // If we're on a new system, figure out how many total planets in system for each TCE
@@ -153,7 +143,7 @@ int main (int argc, char* argv[])
     
           
   // Figure out the LPP threshold based on the number of TCEs
-  lppsig = sqrt(2)*INVERFC(1.0/20367);
+  lppsig = sqrt(2)*INVERFC(1.0/20367);  // Fixing to OPS run number of 20,367 for both ops and injected so they use same thresholds
 
   
   // Okay let the judging begin!
@@ -180,9 +170,12 @@ int main (int argc, char* argv[])
     if(not_transit_like[i]==0 && sig_sec_eclipse[i]==0)
       SECECLIPSE();
     
-    // Check for any period aliasing
-    PERIODALIAS();
-
+    // Apply robo centroid disposition
+    centroid_offset[i] = data[i].robo_cent_disp;
+    
+    // Apply ephem match disposition
+    ephemeris_match[i] = data[i].ephem_match_disp;
+      
     // Make final PC/FP determination
     nexscidisp="PC";
     if(not_transit_like[i]==1)
@@ -201,12 +194,13 @@ int main (int argc, char* argv[])
   outfile.close();
   }
   
-  
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
   
 // Function to read in the data
+
 void READDATA()
   {
-
   infile.open(infilename.c_str());
   if(infile.fail()==1) // If file doesn't exist, exit with warning
     {
@@ -265,6 +259,9 @@ void READDATA()
 }
 
 
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+// Function to check if TCE is the secondary eclipse of the system
 
 void ISSEC() {
 
@@ -289,82 +286,11 @@ for(j=1;j<data[i].pn;j++)
 
 }
 
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
  
-void PERIODALIAS() {
-
-// Check for period aliasing in DV detrend // WARNING: Move higher up so it get's applied to secondaries?
-tmpdob1 = tmpdob2 = tmpdob3 = tmpdob4 = tmpdob5 = 0;
-if(not_transit_like[i]==0 && data[i].dv_ph_sec > 0 && data[i].dv_ph_ter > 0 && data[i].dv_sig_sec/data[i].dv_fred > data[i].dv_sig_fa && data[i].dv_sig_ter/data[i].dv_fred > data[i].dv_sig_fa)
-  {
-  if(data[i].dv_ph_sec <=0.5)
-    tmpdob1 = 1.0/fabs(data[i].dv_ph_sec);
-  else
-    tmpdob1 = 1.0/fabs(data[i].dv_ph_sec-1.0);
-  
-  if(data[i].dv_ph_ter <=0.5)
-    tmpdob2 = 1.0/fabs(data[i].dv_ph_ter);
-  else
-    tmpdob2 = 1.0/fabs(data[i].dv_ph_ter-1.0);
-
-  tmpdob3 = sqrt(2)*INVERFC(fabs(tmpdob1 - rint(tmpdob1)));
-  tmpdob4 = sqrt(2)*INVERFC(fabs(tmpdob2 - rint(tmpdob2)));
-
-  if(tmpdob1 > tmpdob2)
-    tmpdob5 = tmpdob1;
-  else
-    tmpdob5 = tmpdob2;
-  }
-  
-if(tmpdob3 > ESIG_THRESH && tmpdob4 > ESIG_THRESH)
-  {
-  // not_transit_like[i]=1;
-  if(data[i].comments!="")  data[i].comments+="---";
-  stringstream ss;
-  ss << rint(tmpdob5);
-  string tmpstr1 = ss.str();
-  tmpstr2 = "PERIOD_ALIAS_IN_DV_DATA_SEEN_AT_" + tmpstr1 + ":1";
-  data[i].comments+=tmpstr2;
-  }
-  
-   
-  
-// Check for period aliasing in Alt detrend // WARNING: Move higher up so it get's applied to secondaries?
-tmpdob1 = tmpdob2 = tmpdob3 = tmpdob4 = tmpdob5 = 0;
-if(not_transit_like[i]==0 && data[i].alt_ph_sec > 0.0 && data[i].alt_ph_ter > 0.0 && data[i].alt_sig_sec/data[i].alt_fred > data[i].alt_sig_fa && data[i].alt_sig_ter/data[i].alt_fred > data[i].alt_sig_fa)
-  {
-  if(data[i].alt_ph_sec <=0.5)
-    tmpdob1 = 1.0/fabs(data[i].alt_ph_sec);
-  else
-    tmpdob1 = 1.0/fabs(data[i].alt_ph_sec-1.0);
-  
-  if(data[i].alt_ph_ter <=0.5)
-    tmpdob2 = 1.0/fabs(data[i].alt_ph_ter);
-  else
-    tmpdob2 = 1.0/fabs(data[i].alt_ph_ter-1.0);
-
-  tmpdob3 = sqrt(2)*INVERFC(fabs(tmpdob1 - rint(tmpdob1)));
-  tmpdob4 = sqrt(2)*INVERFC(fabs(tmpdob2 - rint(tmpdob2)));
-
-  if(tmpdob1 > tmpdob2)
-    tmpdob5 = tmpdob1;
-  else
-    tmpdob5 = tmpdob2;
-  }
-  
-if(tmpdob3 > ESIG_THRESH && tmpdob4 > ESIG_THRESH)
-  {
-  //  not_transit_like[i]=1;
-  if(data[i].comments!="")  data[i].comments+="---";
-  stringstream ss;
-  ss << rint(tmpdob5);
-  string tmpstr1 = ss.str();
-  tmpstr2 = "PERIOD_ALIAS_IN_ALT_DATA_SEEN_AT_" + tmpstr1 + ":1";
-  data[i].comments+=tmpstr2;
-  }
-
-}
-  
-  
+// Function to check if the TCE is not transit-like
+ 
 void TRANSITLIKE() {
   
 // DV LPP Test
@@ -478,6 +404,9 @@ for(j=1;j<data[i].pn;j++)
 }
 
 
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+// Function to check if the TCE has a visible secondary eclipse
   
 void SECECLIPSE() {
 
@@ -565,11 +494,11 @@ if(period_is_double[i]==1)
 }
   
 
+///////////////////////////////////////////////////////////////////////////////////////////////////
 
+// Function to compute the match significance of two periods and epochs
 
 void COMPPT(double P1, double P2, double T1, double T2) {
-  
-// Compute period and epoch matching significances
   
 if(P1 < P2)
   {
@@ -607,8 +536,11 @@ double ESIG(double E1, double E2, double P) {
   return sqrt(2)*INVERFC(fabs((E1-E2)/P - rint((E1-E2)/P)));
 }
 
-  
-// Error function 
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+// The error function 
+
 double INVERFC(double p) {
   double x, err, t, pp;
 
@@ -626,9 +558,3 @@ double INVERFC(double p) {
   }
   return (p<1.0 ? x:-x);
 }
-  
-
-
-  
-// That's all folks!
-
